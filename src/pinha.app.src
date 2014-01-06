@@ -1,0 +1,15 @@
+{application, pinha, [
+  {description, "Pinha."},
+    {vsn, "1"},
+    {modules, []},
+    {registered, [websocket_sup]},
+    {applications, [
+      kernel,
+      stdlib,
+      cowboy,
+      jsx,
+      couchbeam
+        ]},
+    {mod, {pinha_app, []}},
+    {env, []}
+  ]}.
