@@ -5,7 +5,7 @@
 -export([start/0, stop/0]).
 
 start() ->
-  Url = "http://localhost:5984",
+  Url = os:getenv("DBURL"),
   Server = couchbeam:server_connection(Url, []),
 
   % Verify connection

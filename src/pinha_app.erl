@@ -8,12 +8,10 @@
 start(_Type, _Args) ->
   register(db, spawn(pinha_db, start, [])),
   register(lobby, spawn(pinha_lobby, start, [])),
-  Dispatch = cowboy_router:compile([
-                                    {'_', [
+  Dispatch = cowboy_router:compile([ {'_', [
                                            {"/", ws_handler, []}
-                                          ]}
-                                   ]),
-  {ok, _} = cowboy:start_http(http, 100, [{port, 8080}],
+                                          ]} ]),
+  {ok, _} = cowboy:start_http(http, 100, [{port, 62937}],
                               [{env, [{dispatch, Dispatch}]}]),
   websocket_sup:start_link().
 

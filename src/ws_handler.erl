@@ -26,6 +26,7 @@ websocket_handle({text, Msg}, Req, State) ->
     K when is_list(K) ->
       case catch atomize(K) of
         [{action, Action} | Data] ->
+          %erlang:display({client_action(Action), Data}),
           get(player) ! {client_action(Action), Data};
         _ ->
           io:format("[WARNING|CLIENT] received message without an action~n")
@@ -37,8 +38,7 @@ websocket_handle({text, Msg}, Req, State) ->
   end,
   {ok, Req, State};
 
-websocket_handle(_Data, Req, State) ->
-  {ok, Req, State}.
+websocket_handle(_Data, Req, State) -> {ok, Req, State}.
 
 websocket_info([Action | Data], Req, State) ->
   Enc = encode([{action, server_action(Action)} | Data]),
