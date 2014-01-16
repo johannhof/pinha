@@ -7,6 +7,8 @@ The goal is to provide more stability and less side effects than the Node implem
 
 I have found both Erlang and Node excellent platforms to develop realtime game servers on.
 
+To build:
+
 ``` bash
 $ make
 ```
@@ -16,5 +18,3 @@ To start the release in the foreground:
 ``` bash
 $ ./_rel/bin/pinha console
 ```
-
-Then point your browser at [http://localhost:8080](http://localhost:8080).
