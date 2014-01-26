@@ -6,8 +6,12 @@
 -export([stop/1]).
 
 start(_Type, _Args) ->
+  %spawn global services
   register(db, spawn(pinha_db, start, [])),
   register(lobby, spawn(pinha_lobby, start, [])),
+  register(game_service, spawn(pinha_game_service, start, [])),
+
+  % set up routing
   Dispatch = cowboy_router:compile([ {'_', [
                                            {"/", ws_handler, []}
                                           ]} ]),

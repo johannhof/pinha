@@ -19,15 +19,10 @@ server_action(draw)->1014.
 
 client_action(2001)->set_name;
 client_action(2002)->go_to_lobby;
-client_action(2003)->pair;
-client_action(2004)->accept;
-client_action(2005)->deny;
-client_action(2006)->ready;
-client_action(2007)->set_id;
-client_action(2008)->lose;
-client_action(2009)->get_name;
-client_action(2010)->end_turn;
-client_action(2011)->leave_lobby;
-client_action(2012)->revenge;
-client_action(2013)->leave_game_over;
+client_action(2003)->enter_game;
+client_action(2004)->set_id;
+client_action(2005)->lose;
+client_action(2006)->get_name;
+client_action(2007)->end_turn;
+client_action(2008)->leave_lobby;
 client_action(_)->invalid.

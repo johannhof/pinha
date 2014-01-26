@@ -28,7 +28,8 @@ websocket_handle({text, Msg}, Req, State) ->
         [{action, Action} | Data] ->
           %erlang:display({client_action(Action), Data}),
           get(player) ! {client_action(Action), Data};
-        _ ->
+        _Other ->
+          %erlang:display(Other),
           io:format("[WARNING|CLIENT] received message without an action~n")
       end;
 

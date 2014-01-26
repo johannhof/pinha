@@ -1,15 +1,30 @@
 -module(pinha_player).
 
--import(pinha_utils, [replace/2, extract/2, log/2, log_error/2]).
+-import(pinha_utils, [replace/2, extract/2, log/2, log_error/2, except/2]).
 
 -import(io_lib, [format/2]).
 
 -export([start/1, stop/0]).
 
-% Process memory:
+% Process memory: TODO get rid of this
 % client - Pid of the handler that sends messages to the client
 % player - database object of the player
 % name - name of the player
+% lobby - is the player in the lobby right now? (ugly)
+
+start(Pid) ->
+  log("A client connected"),
+  put(client, Pid),
+  unidentified().
+
+stop() ->
+  log(format("~s has disconnected", [get(name)])),
+  exit(normal).
+
+leave_lobby() ->
+  lobby ! {self(), remove},
+  put(lobby, false). % TODO ugly hack to set lobby state,
+  % better check in lobby if player already exists (set instead of list?)
 
 unidentified() ->
   receive
@@ -23,142 +38,110 @@ unidentified() ->
         {unknown_user, Player} ->
           put(player, Player),
           put(name, extract(Player, name)),
-          get(client) ! [unknown_user];
-        disconnected ->
-          general(disconnected, fun unidentified/0)
+          get(client) ! [unknown_user]
       end,
-      nowhere();
-    disconnected ->
-      general(disconnected, fun unidentified/0);
-    _ ->
-      unidentified()
+      main();
+    disconnected -> stop()
   end.
 
-nowhere() ->
+main() ->
   receive
     {go_to_lobby, _} ->
-      lobby ! {self(), add, get(player)},
-      lobby();
-    Other ->
-      general(Other, fun nowhere/0)
-  end.
-
-lobby() ->
-  receive
-    {leave_lobby, _} ->
-      lobby ! {self(), remove},
-      nowhere();
-
-    {pair, [{partner, PartnerID} | _]} ->
-      lobby ! {self(), pair, PartnerID, get(name)},
-      receive
-        {Pid, accept} ->
-          lobby ! {self(), remove},
-          get(client) ! [start],
-          game(Pid);
-        {_Pid, deny} ->
-          get(client) ! [denied],
-          lobby();
-        not_found ->
-          get(client) ! [denied],
-          lobby()
+      Lobby = get(lobby),
+      if Lobby /= true ->
+           lobby ! {self(), add, except(['_id', '_rev', games], get(player))},
+           put(lobby, true);
+         true -> erlang:display(Lobby)
       end,
-      lobby();
+      main();
 
-    {request, Partner, Name} ->
-      get(client) ! [request, {partner, Name} ],
-      log(format("~s wants to pair with ~s", [Name, get(name)])),
-      receive
-        {accept, _} ->
-          Partner ! {self(), accept},
-          lobby ! {self(), remove},
-          log(format("~s has accepted")),
-          game(Partner);
-        {deny, _} ->
-          Partner ! {self(), deny},
-          log(format("~s has denied")),
-          lobby();
-        disconnected ->
-          Partner ! {self(), deny},
-          lobby ! {self(), remove},
-          general(disconnected, {})
-      end;
+    {leave_lobby, _} ->
+      leave_lobby(),
+      main();
 
-    Update = [lobby_update | _Data] ->
-      get(client) ! Update,
-      lobby();
+    % create a new game by challenging the specified partner
+    {enter_game, [{partner, PartnerID} | _]} ->
+      leave_lobby(),
+      log(format("~s wants to play a game")),
+      game_service ! {self(), enter_game, {extract(get(player), public_id), PartnerID}},
+      receive Game when is_pid(Game) -> game(Game) end; %% TODO: save game id in player
+
+    {set_name, [{name, Name} | _]} -> set_name(Name);
+    {get_name, _} -> get_name();
 
     disconnected ->
-      lobby ! {self(), remove},
-      general(disconnected, {});
+      Lobby = get(lobby),
+      if Lobby =:= true ->
+           lobby ! {self(), remove},
+           put(lobby, false) % TODO ugly hack to set lobby state,
+      end,
+      stop();
 
-    Other ->
-      general(Other, fun lobby/0)
+    % forward lobby update to client
+    Update = [lobby_update | _Data] ->
+      Lobby = get(lobby),
+      if Lobby =:= true ->
+           get(client) ! Update
+      end,
+      main()
   end.
 
-game(Partner) ->
-  receive % here the players are calculating the opponent's results
-    [lobby_update | _] -> game(Partner); % in case any lobby updates came through
-    [leave_lobby | _] -> game(Partner); % in case any lobby updates came through
+leave_game(Game) ->
+  log(format("~s has left a game.")),
+  Game ! {self(), leave}.
 
-    {ready, _} ->
-      log(format("~s is ready")),
-      Partner ! ready,
-      receive % waiting for the opponent's ready
-        ready ->
-          get(client) ! [turn],
-          log(format("~s starts his turn")),
-          receive %players are calculating their own turn now
-            {end_turn, Data} ->
-              log(format("~s has ended his turn")),
-              Partner ! [end_turn | Data],
-              receive
-                D = [end_turn | _] -> get(client) ! D;
-                you_win -> win(Partner)
-              end,
-              game(Partner);
-            {lose, _} ->
-              log(format("~s has resigned")),
-              Partner ! you_win,
-              lose(Partner);
-            you_win -> win(Partner)
-          end;
-        you_win -> win(Partner)
-      end;
+game(Game) ->
+  receive
+    % Player messages
+
+    {end_turn, Data} ->
+      log(format("~s has ended his turn")),
+      Game ! {self(), end_turn, Data},
+      game(Game);
 
     {lose, _} ->
       log(format("~s has declared that he lost")),
-      Partner ! you_win,
-      receive
-        you_win ->
-          log(format("~s has tied? Woot?")),
-          get(client) ! [draw],
-          gameover(Partner);
-        ready -> lose(Partner)
-      end,
-      lobby();
+      Game ! {self(), lose};
 
-    partner_left ->
-      log(format("~s is shocked to hear this.")),
-      get(client) ! [partner_left],
-      lobby();
+    {leave_game, _} ->
+      leave_game(Game),
+      main();
 
     disconnected ->
-      log(format("~s has left a running game. Notifiying partner")),
-      Partner ! partner_left,
-      general(disconnected, {})
+      leave_game(Game),
+      stop();
+
+    % Game messages
+
+    {Game, turn, Data} ->
+      get(player) ! [turn, Data],
+      game(Game);
+
+    {Game, world, Data} ->
+      get(player) ! [world, Data],
+      game(Game);
+
+    {Game, you_win}-> win();
+    {Game, you_lose}-> lose();
+    {Game, draw}-> draw()
   end.
 
-lose(Partner) ->
+%% ENDGAME BEHAVIOR %%
+
+draw() ->
+  get(client) ! [draw],
+  main().
+
+lose() ->
   Losses = extract(get(player), lost),
   db ! {self(), save, replace(get(player), {lost, Losses + 1})},
   receive
     {ok, Player} ->
       put(player, Player)
   end,
-  gameover(Partner).
+  main().
 
-win(Partner) ->
+win() ->
   log(format("~s has won the game. Yeah!")),
   get(client) ! [you_win],
   Wins = extract(get(player), won),
@@ -167,48 +150,16 @@ win(Partner) ->
     {ok, Player} ->
       put(player, Player)
   end,
-  gameover(Partner).
+  main().
 
-gameover(Partner) ->
-  receive
+%% HELPERS %%
 
-    {revenge, _} ->
-      log(format("~s wants revenge")),
-      Partner ! revenge,
-      receive
-        accept ->
-          get(client) ! [start],
-          game(Partner);
-        _ ->
-          get(client) ! [denied],
-          gameover(Partner)
-      end;
+get_name() ->
+  log(format("~s has asked for his name")),
+  get(client) ! [send_name, {name, get(name)}],
+  main().
 
-    revenge ->
-      get(client) ! [request],
-      receive
-        {accept, _} ->
-          Partner ! accept,
-          log(format("~s has accepted")),
-          game(Partner);
-        {deny, _} ->
-          Partner ! deny,
-          log(format("~s has denied")),
-          gameover(Partner)
-      end;
-
-    partner_left_game_over ->
-      get(client) ! [partner_left_game_over],
-      nowhere();
-
-    Other ->
-      Partner ! partner_left_game_over,
-      log(format("~s has left the game over area")),
-      self() ! Other,
-      nowhere()
-  end.
-
-general({set_name, [{name, Name} | _]}, F) ->
+set_name(Name) ->
   log(format("~s has set his name to ~s", [get(name), Name])),
   db ! {self(), save, replace(get(player), {name, Name})},
   receive
@@ -217,34 +168,7 @@ general({set_name, [{name, Name} | _]}, F) ->
       put(player, Player),
       get(client) ! [confirm, {name, Name}]
   end,
-  F();
-
-general({get_name, _}, F) ->
-  log(format("~s has asked for his name")),
-  get(client) ! [send_name, {name, get(name)}],
-  F();
-
-% unknown action
-general({Action, _}, F) when is_atom(Action) ->
-  {name, Name} = erlang:fun_info(F, name),
-  log_error(format("Client has the status ~s. It can not receive the action ~s", [Name, Action])),
-  F();
-
-general(disconnected, _) ->
-  stop();
-
-% keep calm and carry on
-general(_, F) ->
-  F().
-
-start(Pid) ->
-  log("A client connected"),
-  put(client, Pid),
-  unidentified().
-
-stop() ->
-  log(format("~s has disconnected", [get(name)])),
-  exit(normal).
+  main().
 
 format(Message) ->
   format(Message, [get(name)]).
@@ -252,5 +176,5 @@ format(Message) ->
 log(Message) ->
   log(Message, "PLAYER").
 
-log_error(Message) ->
-  log_error(Message, "PLAYER").
+%log_error(Message) ->
+%log_error(Message, "PLAYER").
