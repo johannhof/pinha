@@ -4,30 +4,30 @@
 
 -export([start/0, stop/0]).
 
-enter_game(Pid, IDs = {ID1, ID2})->
+enter_game(Pid, IDs = {ID1, ID2}) ->
   GameID = cantor(ID1, ID2), % make unique id from player ids
   case ets:lookup(running, GameID) of
     [] -> % no game running
       log("creating a new game"),
       ets:insert(running, {
                    GameID,
-                   Game = spawn(pinha_game, start, [new, Pid, IDs])
-                  }),
-      Pid ! Game;
+                   spawn(pinha_game, start, [new, Pid, IDs])
+                  });
 
     [{GameID, Game}] -> %% TODO: enable shutting down of game processes
       log("found a running game"),
-      Game ! {Pid, enter, ID1},
-      Pid ! Game
+      Game ! {Pid, enter, ID1}
   end.
 
 % Implementation of the cantor pairing function
-% generates a unique number from two other numbers
+% generates a unique number from two other numbers, regardless of order
+cantor(X,Y) when X > Y -> cantor(Y,X);
 cantor(X,Y) -> (math:pow(X, 2) + 3*X + 2*X*Y + Y + math:pow(Y,2)) / 2.
 
 loop() ->
   receive
-    {Pid, enter_game, IDs} -> enter_game(Pid, IDs)
+    {Pid, enter_game, IDs = {ID1, ID2}} when is_number(ID1), is_number(ID2) ->
+      enter_game(Pid, IDs)
   end,
   loop().
 

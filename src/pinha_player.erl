@@ -49,7 +49,7 @@ main() ->
     {go_to_lobby, _} ->
       Lobby = get(lobby),
       if Lobby /= true ->
-           lobby ! {self(), add, except(['_id', '_rev', games], get(player))},
+           lobby ! {self(), add, except(['_id', '_rev', phone_id, games], get(player))},
            put(lobby, true);
          true -> erlang:display(Lobby)
       end,
@@ -60,11 +60,7 @@ main() ->
       main();
 
     % create a new game by challenging the specified partner
-    {enter_game, [{partner, PartnerID} | _]} ->
-      leave_lobby(),
-      log(format("~s wants to play a game")),
-      game_service ! {self(), enter_game, {extract(get(player), public_id), PartnerID}},
-      receive Game when is_pid(Game) -> game(Game) end; %% TODO: save game id in player
+    {enter_game, [{partner, PartnerID} | _]} -> enter_game(PartnerID);
 
     {set_name, [{name, Name} | _]} -> set_name(Name);
     {get_name, _} -> get_name();
@@ -86,11 +82,24 @@ main() ->
       main()
   end.
 
+enter_game(PartnerID) ->
+  leave_lobby(),
+  log(format("~s wants to play a game")),
+  game_service ! {self(), enter_game, {extract(get(player), public_id), PartnerID}},
+  receive
+    {Game, new_game} ->
+      get(client) ! [new_game],
+      game(Game);
+    {Game, existing_game, Data} ->
+      get(client) ! [existing_game | Data],
+      game(Game)
+  end. %% TODO: save game id in player
+
 leave_game(Game) ->
   log(format("~s has left a game.")),
   Game ! {self(), leave}.
 
-game(Game) ->
+game(Game) when is_pid(Game) ->
   receive
     % Player messages
 
@@ -101,7 +110,8 @@ game(Game) ->
 
     {lose, _} ->
       log(format("~s has declared that he lost")),
-      Game ! {self(), lose};
+      Game ! {self(), lose},
+      lose();
 
     {leave_game, _} ->
       leave_game(Game),
