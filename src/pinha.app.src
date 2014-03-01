@@ -8,7 +8,8 @@
       stdlib,
       cowboy,
       jsx,
-      couchbeam
+      couchbeam,
+      inets
         ]},
     {mod, {pinha_app, []}},
     {env, []}

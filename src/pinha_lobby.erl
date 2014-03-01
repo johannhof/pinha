@@ -11,22 +11,12 @@ listen(Lobby) ->
   receive
     {Pid, add, Data} ->
       log("A client joins the lobby"),
-      listen([{Pid, Data, extract(Data, '_id')} | Lobby]);
+      listen([{Pid, Data, extract(Data, 'public_id')} | Lobby]);
     {Pid, remove} ->
       log("A client leaves the lobby"),
-      listen([{C, P, ID} || {C, P, ID} <- Lobby, C /= Pid]);
-    {Pid, pair, PartnerID, Name} ->
-      log("A client wants to pair"),
-      case findById(Lobby, PartnerID) of
-          [{C, _, _}] -> C ! {request, Pid, Name};
-          _ -> Pid ! not_found
-      end,
-      listen(Lobby);
+      listen([Player || Player = {C, _P, _ID} <- Lobby, C /= Pid]);
     send_update -> listen(Lobby)
   end.
-
-findById(Lobby, PlayerID) ->
-  [Data || Data = {_C, _P, ID} <- Lobby, ID =:= PlayerID].
 
 send_update(Lobby) ->
   send_update([], [C || {C, _, _} <- Lobby], [], [P || {_, P, _} <- Lobby]).

@@ -4,6 +4,7 @@
          deatomize/1,
          replace/2,
          extract/2,
+         except/2,
          formatted_now/0,
          log/2,
          log_error/2
@@ -29,6 +30,9 @@ replace([OElement | T], Element, L) ->
 
 extract([{K, V} | _T], Key) when Key =:= K -> V;
 extract([{_K, _V} | T], Key) -> extract(T, Key).
+
+except(A, L) ->
+  [E || E = {K, _V} <- L, lists:all(fun (Ex) -> K /= Ex end, A)].
 
 formatted_now() ->
   {{Year,Month,Day},{Hour,Minutes,Seconds}} = erlang:localtime(),
