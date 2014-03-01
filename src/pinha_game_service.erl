@@ -11,8 +11,12 @@ enter_game(Pid, IDs = {ID1, ID2}) ->
       log("creating a new game"),
       ets:insert(running, {
                    GameID,
-                   spawn(pinha_game, start, [new, Pid, IDs])
-                  });
+                   Game = spawn(pinha_game, start, [new, GameID, Pid, IDs])
+                  }),
+      if ID2 == 1 ->
+           Game ! {pinha_npc_service:get_random(Game), enter, ID2};
+         true -> ok
+      end;
 
     [{GameID, Game}] -> %% TODO: enable shutting down of game processes
       log("found a running game"),
@@ -27,7 +31,11 @@ cantor(X,Y) -> (math:pow(X, 2) + 3*X + 2*X*Y + Y + math:pow(Y,2)) / 2.
 loop() ->
   receive
     {Pid, enter_game, IDs = {ID1, ID2}} when is_number(ID1), is_number(ID2) ->
-      enter_game(Pid, IDs)
+      enter_game(Pid, IDs);
+    {GameID, end_game, Data = {_ID, Winner, _Loser}} ->
+      pinha_npc_service:insert_if_suited(Winner),
+      ets:delete(running, GameID),
+      dets:insert(games, Data)
   end,
   loop().
 
